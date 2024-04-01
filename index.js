@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-const io = require('socket.io-client');
+const WebSocket = require('ws');
+
 const config = require('./config');
 const events = require('events');
 const axios = require('axios');
@@ -16,35 +17,35 @@ const setApiKey = (apiKey) => {
  */
 const streamApiStore = {};
 
+
 const initSocket = (apiKey) => {
-  const uri = config.io.server + '/' + config.io.namespace.allFilings;
-  const params = {
-    query: { apiKey },
-    transports: ['websocket'], // ensure traffic goes through load balancer
-  };
-  streamApiStore.socket = io(uri, params);
-  streamApiStore.socket.on('connect', () =>
-    console.log('Socket connected to', uri)
-  );
-  streamApiStore.socket.on('filing', handleNewFiling);
-  streamApiStore.socket.on('filings', handleNewFilings);
+  const uri = `wss://stream.sec-api.io?apiKey=${apiKey}`;
+  streamApiStore.socket = new WebSocket(uri);
+
+  streamApiStore.socket.on('open', () => {
+    console.log('WebSocket connected to', uri);
+  });
+
+  streamApiStore.socket.on('message', (data) => {
+    const filings = JSON.parse(data);
+    filings.forEach((filing) => {
+      streamApiStore.eventEmitter.emit('filing', filing);
+    });
+  });
+
+  streamApiStore.socket.on('close', () => {
+    console.log('WebSocket connection closed');
+  });
+
   streamApiStore.socket.on('error', console.error);
 };
 
-const handleNewFiling = (filing) => {
-  streamApiStore.eventEmitter.emit('filing', filing);
-};
-
-const handleNewFilings = (filings) => {
-  streamApiStore.eventEmitter.emit('filings', filings);
-};
-
 const close = () => {
-  if (streamApiStore.socket.close) {
+  if (streamApiStore.socket) {
     streamApiStore.socket.close();
+    console.log('WebSocket connection closed');
   }
 };
-
 const connect = (apiKey) => {
   setApiKey(apiKey);
   initSocket(apiKey);
